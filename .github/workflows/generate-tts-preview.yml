@@ -1,0 +1,77 @@
+name: Generate Kuwagata Narration Preview
+
+on:
+  push:
+    paths:
+      - '.github/workflows/generate-tts-preview.yml'
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install speech and audio tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install edge-tts
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Create narration preview
+        shell: bash
+        run: |
+          mkdir -p output raw
+          cat > narration.txt <<'EOF'
+          こんにちは！　日本のクワガタ分布図鑑へ、ようこそ。
+
+          日本には、住む場所や、好きな森がちがう、いろいろなクワガタがいます。
+          今日は、コクワガタ、ノコギリクワガタ、ミヤマクワガタ、ヒラタクワガタ、オオクワガタの五種類を、日本地図を見ながら調べてみましょう。
+
+          まずは、ノコギリクワガタ。
+          名前のとおり、オスの大あごには、のこぎりの刃のような歯が並びます。
+          大きなオスでは、大あごが左右に大きく曲がり、体は、黒っぽい茶色から、赤みのある茶色です。
+          北海道から九州まで広く見られ、平地や、低い山の、クヌギ、コナラ、ヤナギなどに集まります。
+          ただし、地域や標高によって、見つけやすさは変わります。
+
+          ここで問題です。
+          涼しい山地で見つかりやすいクワガタは、ノコギリクワガタ、ミヤマクワガタ、ヒラタクワガタの、どれでしょう？
+
+          正解は、ミヤマクワガタ！
+          この続きでは、それぞれのクワガタが、どの地域の、どんな森で暮らしているのかを、くわしく見ていきます。
+          EOF
+
+          edge-tts \
+            --voice ja-JP-KeitaNeural \
+            --rate=-5% \
+            --pitch=+0Hz \
+            --file narration.txt \
+            --write-media raw/male.mp3 \
+            --write-subtitles output/Kuwagata_Narration_Preview_Male.srt
+
+          edge-tts \
+            --voice ja-JP-NanamiNeural \
+            --rate=-5% \
+            --pitch=+0Hz \
+            --file narration.txt \
+            --write-media raw/female.mp3 \
+            --write-subtitles output/Kuwagata_Narration_Preview_Female.srt
+
+          ffmpeg -y -i raw/male.mp3 -af "loudnorm=I=-16:LRA=7:TP=-1.5" -ar 48000 -b:a 192k output/Kuwagata_Narration_Preview_Male.mp3
+          ffmpeg -y -i raw/female.mp3 -af "loudnorm=I=-16:LRA=7:TP=-1.5" -ar 48000 -b:a 192k output/Kuwagata_Narration_Preview_Female.mp3
+          cp narration.txt output/Kuwagata_Narration_Preview_Script.txt
+
+      - name: Upload preview audio
+        uses: actions/upload-artifact@v4
+        with:
+          name: kuwagata-narration-preview
+          path: output/
+          if-no-files-found: error
+          retention-days: 7
