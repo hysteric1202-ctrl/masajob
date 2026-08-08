@@ -1,26 +1,22 @@
 from pathlib import Path
+import re
 import sys
 
 p = Path(sys.argv[1] if len(sys.argv) > 1 else '/tmp/build_kuwagata_dual.py')
 s = p.read_text(encoding='utf-8')
 
-old_download = '''    url = info.get("thumburl") or info["url"]
-    img = requests.get(url, headers=headers, timeout=60)
-    img.raise_for_status()
-    out_path.write_bytes(img.content)
-'''
-new_download = '''    url = info.get("thumburl") or info["url"]
+replacement = r'''def commons_download(file_name: str, out_path: Path, width: int = 1800) -> dict[str, str]:
+    """Download one verified Wikimedia Commons file without using the rate-limited API."""
     from urllib.parse import quote
     import time
-    clean_thumb = url.split("?", 1)[0]
-    clean_original = info["url"].split("?", 1)[0]
+
+    encoded = quote(file_name, safe='')
+    source_url = f"https://commons.wikimedia.org/wiki/File:{encoded}"
     candidates = [
-        clean_thumb,
-        f"https://commons.wikimedia.org/w/thumb.php?f={quote(file_name, safe='')}&w={width}",
-        f"https://commons.wikimedia.org/wiki/Special:Redirect/file/{quote(file_name, safe='')}?width={width}",
+        f"https://commons.wikimedia.org/wiki/Special:Redirect/file/{encoded}?width={width}",
+        f"https://commons.wikimedia.org/w/thumb.php?f={encoded}&w={width}",
+        f"https://commons.wikimedia.org/wiki/Special:Redirect/file/{encoded}",
     ]
-    if not file_name.lower().endswith(".svg"):
-        candidates.append(clean_original)
     session = requests.Session()
     session.headers.update({
         "User-Agent": "KuwagataEducationVideo/1.0 (https://github.com/hysteric1202-ctrl/masajob; educational use)",
@@ -28,35 +24,36 @@ new_download = '''    url = info.get("thumburl") or info["url"]
         "Referer": "https://commons.wikimedia.org/",
     })
     last_error = None
-    downloaded = False
     for candidate in dict.fromkeys(candidates):
-        for attempt in range(7):
+        for attempt in range(10):
             try:
-                img = session.get(candidate, timeout=120, allow_redirects=True)
-                ctype = img.headers.get("content-type", "").lower()
-                if img.status_code == 200 and ctype.startswith("image/") and len(img.content) > 1000:
-                    out_path.write_bytes(img.content)
-                    url = candidate
-                    downloaded = True
-                    break
+                response = session.get(candidate, timeout=150, allow_redirects=True)
+                ctype = response.headers.get("content-type", "").lower()
+                if response.status_code == 200 and ctype.startswith("image/") and len(response.content) > 1000:
+                    out_path.write_bytes(response.content)
+                    time.sleep(5)
+                    return {
+                        "source_url": source_url,
+                        "download_url": response.url,
+                        "artist": "",
+                        "license": "",
+                    }
                 last_error = RuntimeError(
-                    f"HTTP {img.status_code}; type={ctype}; bytes={len(img.content)}; url={candidate}"
+                    f"HTTP {response.status_code}; type={ctype}; bytes={len(response.content)}; url={candidate}"
                 )
-                retry_after = img.headers.get("Retry-After")
-                wait = int(retry_after) if retry_after and retry_after.isdigit() else min(4 * (attempt + 1), 24)
+                retry_after = response.headers.get("Retry-After")
+                wait = int(retry_after) if retry_after and retry_after.isdigit() else min(6 * (attempt + 1), 60)
                 time.sleep(wait)
             except Exception as exc:
                 last_error = exc
-                time.sleep(min(4 * (attempt + 1), 24))
-        if downloaded:
-            break
-    if not downloaded:
-        raise RuntimeError(f"Could not download {file_name}: {last_error}")
-    time.sleep(2)
+                time.sleep(min(6 * (attempt + 1), 60))
+    raise RuntimeError(f"Could not download {file_name}: {last_error}")
 '''
-if old_download not in s:
-    raise SystemExit('download block not found')
-s = s.replace(old_download, new_download, 1)
+
+pattern = r"def commons_download\(file_name: str, out_path: Path, width: int = 1800\) -> dict\[str, str\]:\n.*?\n\ndef load_assets"
+s, count = re.subn(pattern, replacement + "\n\ndef load_assets", s, count=1, flags=re.S)
+if count != 1:
+    raise SystemExit(f'commons_download function replacement failed: {count}')
 
 old_tts = '''    run(["edge-tts","--voice",VOICE,"--rate",RATE,"--pitch",PITCH,"--file",str(script_path),"--write-media",str(raw_audio),"--write-subtitles",str(raw_srt)])
 '''
