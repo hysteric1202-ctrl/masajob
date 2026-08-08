@@ -67,5 +67,13 @@ if old_tts not in s:
     raise SystemExit('edge-tts command block not found')
 s = s.replace(old_tts, new_tts, 1)
 
+old_mobile_style = '''        style="FontName=Noto Sans CJK JP,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00131A15,BackColour=&H96000000,BorderStyle=3,Outline=1,Shadow=0,Alignment=2,MarginL=42,MarginR=42,MarginV=48"
+'''
+new_mobile_style = '''        style="FontName=Noto Sans CJK JP,FontSize=12,PrimaryColour=&H00FFFFFF,OutlineColour=&H00131A15,BackColour=&H70000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginL=46,MarginR=46,MarginV=58"
+'''
+if old_mobile_style not in s:
+    raise SystemExit('mobile subtitle style not found')
+s = s.replace(old_mobile_style, new_mobile_style, 1)
+
 p.write_text(s, encoding='utf-8')
 print(f'patched {p}')
