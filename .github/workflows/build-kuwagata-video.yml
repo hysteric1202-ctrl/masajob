@@ -1,0 +1,90 @@
+name: Build Kuwagata Educational Video
+
+on:
+  push:
+    paths:
+      - '.github/workflows/build-kuwagata-video.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install edge-tts pillow requests
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-noto-cjk
+      - name: Build 10-minute video
+        shell: bash
+        run: |
+          cat > /tmp/build.py <<'PY'
+          import os, textwrap, subprocess, requests
+          from PIL import Image, ImageDraw, ImageFont, ImageFilter
+          os.makedirs('final', exist_ok=True); os.makedirs('/tmp/kw', exist_ok=True)
+          W,H=1280,720
+          font='/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc'
+          reg='/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'
+          species=[
+          ('コクワガタ','Dorcus rectus','北海道・本州・四国・九州','平地・丘陵・低山。都市公園でも見つかる','https://tonysharks.com/Tree_of_life/Eukaryote/Opisthokonta/Kokuwagata/P7087447.JPG'),
+          ('ノコギリクワガタ','Prosopocoilus inclinatus','北海道・本州・四国・九州','平地〜低山の雑木林。大型オスは大あごが強く湾曲','https://cdn-ak.f.st-hatena.com/images/fotolife/k/kohya0727tj/20260210/20260210234654.jpg'),
+          ('ミヤマクワガタ','Lucanus maculifemoratus','北海道・本州・四国・九州','やや山地性。涼しい場所で見つけやすい','https://fullpower-encyclopedia.net/wp-content/uploads/2022/08/%E3%83%9F%E3%83%A4%E3%83%9E%E3%82%AF%E3%83%AF%E3%82%AC%E3%82%BF02.jpg'),
+          ('ヒラタクワガタ','Dorcus titanus','本州・四国・九州・沖縄','南方系で西南日本の平地に多い','https://insect-islands.ocnk.net/data/insect-islands/product/20230601_bfd392.jpg'),
+          ('オオクワガタ','Dorcus hopei','北海道・本州・四国・九州','平地〜低山の雑木林。大木の洞を利用する','https://hawaiianbeetle.com/cdn/shop/products/KTZ_8958_d833e0a1-b646-4b03-ada2-54c952f78529_1968x.jpg?v=1654070671')]
+          for i,s in enumerate(species):
+              try:
+                  r=requests.get(s[4],timeout=30,headers={'User-Agent':'Mozilla/5.0'}); r.raise_for_status(); open(f'/tmp/kw/beetle{i}.jpg','wb').write(r.content)
+              except: pass
+          script='''こんにちは！ 日本のクワガタ分布図鑑へ、ようこそ。日本には、住む場所や好きな森がちがう、いろいろなクワガタがいます。今日は、日本でよく知られている五種類を、日本地図を見ながら調べてみましょう。\n\n最初はコクワガタ。北海道、本州、四国、九州に分布します。平地や丘陵地、低い山の雑木林に暮らし、小さな林や都市公園でも見つかることがあります。夜になるとクヌギやコナラの樹液に集まります。オスの大あごは細長く、大きな個体では中央付近に目立つ内歯があります。名前はコクワですが、オスは五センチを超えることもあります。身近な場所でクワガタを探すなら、まず覚えておきたい種類です。\n\n次はノコギリクワガタ。北海道から九州まで広く分布し、平地から低山地の雑木林で見られます。大型のオスでは、大あごが牛の角のように大きく湾曲し、その内側にノコギリの刃のような歯が並びます。ここが重要です。同じノコギリクワガタでも、小さなオスでは大あごが短く、比較的まっすぐになります。つまり、角の形だけで別の種類だと思わないようにしましょう。体は黒褐色から赤褐色で、クヌギやコナラの樹液に集まります。\n\n三番目はミヤマクワガタ。ミヤマは深い山と書きます。北海道、本州、四国、九州に分布し、名前のとおり、ほかの種類よりやや山地性です。ただし地域によっては平地や低山でも見られます。オスは頭の左右が張り出し、大あごも力強い形です。体が黄褐色に見える個体もいます。夏の涼しい山へ行ったときは、ミヤマクワガタに出会えるかもしれません。\n\n四番目はヒラタクワガタ。分布は本州、四国、九州、沖縄。今回の五種類の中では、北海道が基本的な分布に入っていません。やや南方系で、とくに西南日本の平地で多く見られます。名前のとおり体は平たく、がっしりしています。オスの大あごには特徴的な内歯があります。夜にクヌギ、コナラなどの樹液にやって来ます。南へ行くと島ごとに特徴をもつ亜種もいて、日本列島の長さを感じさせるクワガタです。\n\n最後はオオクワガタ。北海道、本州、四国、九州に分布します。平地から低山地の雑木林に暮らしますが、ほかの身近な種類に比べると数が少なく、野外で出会うのは簡単ではありません。大きなクヌギやカシ類の樹液に来て、危険を感じると木の洞へすばやく隠れます。幅広く、がっしりした黒い体と、大きなオスの力強い大あごが特徴です。\n\nここまでを日本地図で比べましょう。コクワガタ、ノコギリクワガタ、ミヤマクワガタ、オオクワガタは、北海道、本州、四国、九州に分布します。ヒラタクワガタは、本州、四国、九州、沖縄です。ただし、分布している地方ならどこでも同じ数だけいる、という意味ではありません。標高、気温、森の種類、樹液が出る木、朽ち木などの条件で、見つけやすさは大きく変わります。\n\nではクイズです。第一問。北海道が基本的な分布に入らないのはどれでしょう。コクワガタ、ヒラタクワガタ、オオクワガタ。答えは、ヒラタクワガタ。第二問。やや山地性で、名前にも深い山という意味があるのは？ 答えはミヤマクワガタ。第三問。大型のオスで、大あごが牛の角のように湾曲し、内側がノコギリ状になるのは？ 答えはノコギリクワガタ。\n\nクワガタを探すときは、森を傷つけないことも大切です。木の皮をはがしたり、洞を壊したりせず、観察したら自然へ戻しましょう。夜の森は危険なので、子どもだけでは行かず、必ず大人と一緒に行きましょう。足元、車、ハチなどにも注意してください。\n\n今日覚えてほしいのは、クワガタは種類によって、住む地域だけでなく、好きな高さや環境も違うということです。日本地図と森の様子をいっしょに考えると、昆虫の暮らしがもっとよく分かります。近くの公園や雑木林では、どのクワガタに会えるでしょうか。自然を大切にしながら、観察してみてください。'''
+          open('/tmp/kw/script.txt','w').write(script)
+          subprocess.run(['edge-tts','--voice','ja-JP-KeitaNeural','--rate=-7%','--file','/tmp/kw/script.txt','--write-media','/tmp/kw/narr.mp3'],check=True)
+          # target exactly 600 sec by padding narration with silence; visual chapters fill full runtime
+          chapters=[('日本のクワガタ分布図鑑','5種類のクワガタと森のひみつ',0,45,None),('コクワガタ','北海道・本州・四国・九州',45,130,0),('ノコギリクワガタ','北海道・本州・四国・九州',130,220,1),('ミヤマクワガタ','北海道・本州・四国・九州',220,310,2),('ヒラタクワガタ','本州・四国・九州・沖縄',310,400,3),('オオクワガタ','北海道・本州・四国・九州',400,490,4),('くらべてみよう！','地域だけでなく、標高や森の環境も大切',490,540,None),('クイズ！','北海道にいないのは？ 山が好きなのは？',540,580,None),('まとめ','森を傷つけず、大人といっしょに観察しよう',580,600,None)]
+          def F(t,chap):
+              title,sub,a,b,idx=chap
+              im=Image.new('RGB',(W,H),(16,55,43)); d=ImageDraw.Draw(im)
+              # forest-like layered background
+              for y in range(H):
+                  v=int(22+35*y/H); d.line((0,y,W,y),fill=(10,v+25,35))
+              d.ellipse((-160,410,520,1040),fill=(27,90,53)); d.ellipse((330,430,1030,1060),fill=(34,105,58)); d.ellipse((820,400,1500,1050),fill=(22,82,47))
+              if idx is not None and os.path.exists(f'/tmp/kw/beetle{idx}.jpg'):
+                  pic=Image.open(f'/tmp/kw/beetle{idx}.jpg').convert('RGB'); pic.thumbnail((500,420)); x=90; y=170
+                  # framed photo, not generated illustration
+                  d.rounded_rectangle((x-12,y-12,x+pic.width+12,y+pic.height+12),24,fill=(245,238,215)); im.paste(pic,(x,y))
+              ft=ImageFont.truetype(font,54); fs=ImageFont.truetype(font,30); fb=ImageFont.truetype(reg,25)
+              d.rounded_rectangle((45,35,1235,130),28,fill=(245,238,215)); d.text((80,50),title,font=ft,fill=(48,39,25))
+              d.rounded_rectangle((620,180,1200,500),28,fill=(248,244,226));
+              lines=textwrap.wrap(sub,18); yy=220
+              for line in lines: d.text((660,yy),line,font=fs,fill=(42,52,39)); yy+=48
+              if idx is not None:
+                  s=species[idx]; yy+=12
+                  for label,val in [('学名',s[1]),('生息地域',s[2]),('環境',s[3])]:
+                      d.text((660,yy),label+'：',font=fb,fill=(105,70,35)); yy+=34
+                      for ln in textwrap.wrap(val,25): d.text((690,yy),ln,font=fb,fill=(40,45,38)); yy+=32
+              d.rounded_rectangle((45,650,1235,700),20,fill=(8,35,28)); d.text((70,660),'日本のクワガタ分布図鑑　｜　生きものを大切に観察しよう',font=ImageFont.truetype(reg,23),fill='white')
+              return im
+          for j,c in enumerate(chapters):
+              F(c[2],c).save(f'/tmp/kw/slide{j}.png')
+          # concatenate fixed-duration slides
+          with open('/tmp/kw/list.txt','w') as f:
+              for j,c in enumerate(chapters): f.write(f"file '/tmp/kw/slide{j}.png'\nduration {c[3]-c[2]}\n")
+              f.write("file '/tmp/kw/slide8.png'\n")
+          subprocess.run("ffmpeg -y -f concat -safe 0 -i /tmp/kw/list.txt -vf 'fps=30,format=yuv420p' -c:v libx264 -preset medium -crf 21 -t 600 /tmp/kw/video.mp4",shell=True,check=True)
+          subprocess.run("ffmpeg -y -i /tmp/kw/video.mp4 -i /tmp/kw/narr.mp3 -filter_complex '[1:a]apad=pad_dur=600,volume=1.0[a]' -map 0:v -map '[a]' -c:v copy -c:a aac -b:a 160k -t 600 -movflags +faststart final/Kuwagata_Habitat_Guide_10min.mp4",shell=True,check=True)
+          open('final/Kuwagata_Video_Script.txt','w').write(script)
+          PY
+          python /tmp/build.py
+      - name: Commit completed video
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add final/
+          git commit -m 'Publish completed Kuwagata educational video' || exit 0
+          git push
