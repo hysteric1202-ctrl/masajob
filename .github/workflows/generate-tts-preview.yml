@@ -10,9 +10,12 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -28,7 +31,7 @@ jobs:
       - name: Create narration preview
         shell: bash
         run: |
-          mkdir -p output raw
+          mkdir -p previews raw
           cat > narration.txt <<'EOF'
           こんにちは！　日本のクワガタ分布図鑑へ、ようこそ。
 
@@ -48,30 +51,16 @@ jobs:
           この続きでは、それぞれのクワガタが、どの地域の、どんな森で暮らしているのかを、くわしく見ていきます。
           EOF
 
-          edge-tts \
-            --voice ja-JP-KeitaNeural \
-            --rate=-5% \
-            --pitch=+0Hz \
-            --file narration.txt \
-            --write-media raw/male.mp3 \
-            --write-subtitles output/Kuwagata_Narration_Preview_Male.srt
+          edge-tts --voice ja-JP-KeitaNeural --rate=-5% --pitch=+0Hz --file narration.txt --write-media raw/male.mp3 --write-subtitles previews/Kuwagata_Narration_Preview_Male.srt
+          edge-tts --voice ja-JP-NanamiNeural --rate=-5% --pitch=+0Hz --file narration.txt --write-media raw/female.mp3 --write-subtitles previews/Kuwagata_Narration_Preview_Female.srt
+          ffmpeg -y -i raw/male.mp3 -af "loudnorm=I=-16:LRA=7:TP=-1.5" -ar 48000 -b:a 128k previews/Kuwagata_Narration_Preview_Male.mp3
+          ffmpeg -y -i raw/female.mp3 -af "loudnorm=I=-16:LRA=7:TP=-1.5" -ar 48000 -b:a 128k previews/Kuwagata_Narration_Preview_Female.mp3
+          cp narration.txt previews/Kuwagata_Narration_Preview_Script.txt
 
-          edge-tts \
-            --voice ja-JP-NanamiNeural \
-            --rate=-5% \
-            --pitch=+0Hz \
-            --file narration.txt \
-            --write-media raw/female.mp3 \
-            --write-subtitles output/Kuwagata_Narration_Preview_Female.srt
-
-          ffmpeg -y -i raw/male.mp3 -af "loudnorm=I=-16:LRA=7:TP=-1.5" -ar 48000 -b:a 192k output/Kuwagata_Narration_Preview_Male.mp3
-          ffmpeg -y -i raw/female.mp3 -af "loudnorm=I=-16:LRA=7:TP=-1.5" -ar 48000 -b:a 192k output/Kuwagata_Narration_Preview_Female.mp3
-          cp narration.txt output/Kuwagata_Narration_Preview_Script.txt
-
-      - name: Upload preview audio
-        uses: actions/upload-artifact@v4
-        with:
-          name: kuwagata-narration-preview
-          path: output/
-          if-no-files-found: error
-          retention-days: 7
+      - name: Commit preview files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add previews/
+          git commit -m "Add generated narration preview" || exit 0
+          git push
