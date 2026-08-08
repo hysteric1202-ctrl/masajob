@@ -55,6 +55,10 @@ s, count = re.subn(pattern, replacement + "\n\ndef load_assets", s, count=1, fla
 if count != 1:
     raise SystemExit(f'commons_download function replacement failed: {count}')
 
+if 'RATE = "-8%"' not in s:
+    raise SystemExit('RATE assignment not found')
+s = s.replace('RATE = "-8%"', 'RATE = "+20%"', 1)
+
 old_tts = '''    run(["edge-tts","--voice",VOICE,"--rate",RATE,"--pitch",PITCH,"--file",str(script_path),"--write-media",str(raw_audio),"--write-subtitles",str(raw_srt)])
 '''
 new_tts = '''    run(["edge-tts","--voice",VOICE,f"--rate={RATE}",f"--pitch={PITCH}","--file",str(script_path),"--write-media",str(raw_audio),"--write-subtitles",str(raw_srt)])
