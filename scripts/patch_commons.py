@@ -3,12 +3,13 @@ import sys
 
 p = Path(sys.argv[1] if len(sys.argv) > 1 else '/tmp/build_kuwagata_dual.py')
 s = p.read_text(encoding='utf-8')
-old = '''    url = info.get("thumburl") or info["url"]
+
+old_download = '''    url = info.get("thumburl") or info["url"]
     img = requests.get(url, headers=headers, timeout=60)
     img.raise_for_status()
     out_path.write_bytes(img.content)
 '''
-new = '''    url = info.get("thumburl") or info["url"]
+new_download = '''    url = info.get("thumburl") or info["url"]
     from urllib.parse import quote
     import time
     clean_thumb = url.split("?", 1)[0]
@@ -53,7 +54,17 @@ new = '''    url = info.get("thumburl") or info["url"]
         raise RuntimeError(f"Could not download {file_name}: {last_error}")
     time.sleep(2)
 '''
-if old not in s:
+if old_download not in s:
     raise SystemExit('download block not found')
-p.write_text(s.replace(old, new, 1), encoding='utf-8')
+s = s.replace(old_download, new_download, 1)
+
+old_tts = '''    run(["edge-tts","--voice",VOICE,"--rate",RATE,"--pitch",PITCH,"--file",str(script_path),"--write-media",str(raw_audio),"--write-subtitles",str(raw_srt)])
+'''
+new_tts = '''    run(["edge-tts","--voice",VOICE,f"--rate={RATE}",f"--pitch={PITCH}","--file",str(script_path),"--write-media",str(raw_audio),"--write-subtitles",str(raw_srt)])
+'''
+if old_tts not in s:
+    raise SystemExit('edge-tts command block not found')
+s = s.replace(old_tts, new_tts, 1)
+
+p.write_text(s, encoding='utf-8')
 print(f'patched {p}')
