@@ -34,8 +34,29 @@ jobs:
 
       - name: Reconstruct and verify builder
         run: |
-          cat scripts/build_kuwagata_dual.part* | tr -d '\r\n' | base64 --decode | gzip --decompress > /tmp/build_kuwagata_dual.py
-          echo 'a2162d5e3b5eaa69afe7bb3d0f506cac8a5c18ea895b24e2ce3d126e63aac848  /tmp/build_kuwagata_dual.py' | sha256sum --check --strict
+          python - <<'PY'
+          from pathlib import Path
+          import base64, gzip, hashlib
+          names = [
+              'scripts/build_kuwagata_dual.part01',
+              'scripts/build_kuwagata_dual.part02',
+              'scripts/build_kuwagata_dual.part03a',
+              'scripts/build_kuwagata_dual.part03b',
+              'scripts/build_kuwagata_dual.part04',
+              'scripts/build_kuwagata_dual.part05',
+          ]
+          chunks = [Path(name).read_text(encoding='utf-8').strip() for name in names]
+          print('payload parts:', [(name, len(chunk)) for name, chunk in zip(names, chunks)])
+          payload = ''.join(chunks)
+          print('payload chars:', len(payload))
+          source = gzip.decompress(base64.b64decode(payload, validate=True))
+          digest = hashlib.sha256(source).hexdigest()
+          print('source bytes:', len(source), 'sha256:', digest)
+          expected = 'a2162d5e3b5eaa69afe7bb3d0f506cac8a5c18ea895b24e2ce3d126e63aac848'
+          if digest != expected:
+              raise SystemExit(f'SHA256 mismatch: {digest} != {expected}')
+          Path('/tmp/build_kuwagata_dual.py').write_bytes(source)
+          PY
           python -m py_compile /tmp/build_kuwagata_dual.py
 
       - name: Build 10-minute PC and smartphone editions
