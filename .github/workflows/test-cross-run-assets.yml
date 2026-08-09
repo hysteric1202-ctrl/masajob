@@ -1,0 +1,53 @@
+name: Test Cross-Run Asset Downloads
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/test-cross-run-assets.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download real video pack
+        uses: actions/download-artifact@v4
+        with:
+          name: kw-pro-assets
+          path: test_assets/videos
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: hysteric1202-ctrl/masajob
+          run-id: 31288295927
+
+      - name: Download exact species pack v2
+        uses: actions/download-artifact@v4
+        with:
+          name: kw-exact-images
+          path: test_assets/images_v2
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: hysteric1202-ctrl/masajob
+          run-id: 31288093670
+
+      - name: Download old male Miyama pack
+        uses: actions/download-artifact@v4
+        with:
+          name: kw-exact-images
+          path: test_assets/images_male
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: hysteric1202-ctrl/masajob
+          run-id: 31287822081
+
+      - name: Verify assets
+        run: |
+          find test_assets -maxdepth 3 -type f -printf '%p | %s bytes\n' | sort
+          test -s test_assets/videos/stag_macro.webm
+          test -s test_assets/videos/stag_walk.webm
+          test -s test_assets/videos/forest.webm
+          test -s test_assets/images_v2/noko_tree.jpg
+          test -s test_assets/images_v2/hirata.jpg
+          test -s test_assets/images_male/miyama.jpg
