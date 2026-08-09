@@ -1,0 +1,178 @@
+name: Build Kuwagata Expedition Revision v3 Fast
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-kuwagata-revision-v3-fast.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install media and rendering dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pillow numpy requests opencv-python-headless
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-noto-cjk librsvg2-bin jq
+
+      - name: Create optimized builder
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          src = Path('scripts/build_kuwagata_revision_v2.py').read_text(encoding='utf-8')
+          src = src.replace(
+              'PALETTE = {\n',
+              'VIGNETTE_CACHE: dict[tuple[int, int, int], Image.Image] = {}\n\nPALETTE = {\n',
+              1,
+          )
+          src = src.replace('src = src.resize((nw, nh), Image.Resampling.LANCZOS)', 'src = src.resize((nw, nh), Image.Resampling.BICUBIC)')
+          src = src.replace('src.thumbnail(size, Image.Resampling.LANCZOS)', 'src.thumbnail(size, Image.Resampling.BICUBIC)')
+          src = src.replace(
+              '''        sh = Image.new("RGBA", base.size, (0, 0, 0, 0))
+                  sm = layer.getchannel("A")
+                  sim = Image.new("RGBA", layer.size, (0, 0, 0, 110))
+                  sim.putalpha(sm.point(lambda p: int(p * 0.55)))
+                  sh.alpha_composite(sim, (x + 10, y + 14))
+                  sh = sh.filter(ImageFilter.GaussianBlur(max(5, int(min(w, h) * 0.035))))
+                  base.alpha_composite(sh)'''.replace('                  ', ''),
+              '''        sm = layer.getchannel("A")
+                  sim = Image.new("RGBA", layer.size, (0, 0, 0, 110))
+                  sim.putalpha(sm.point(lambda p: int(p * 0.52)))
+                  sim = sim.filter(ImageFilter.GaussianBlur(max(4, int(min(w, h) * 0.018))))
+                  base.alpha_composite(sim, (x + 9, y + 12))'''.replace('                  ', ''),
+          )
+          src = src.replace(
+              '''    sh = Image.new("RGBA", base.size, (0, 0, 0, 0))
+              sd = ImageDraw.Draw(sh)
+              sd.rounded_rectangle((x1 + 8, y1 + 10, x1 + w + 8, y1 + h + 10), radius=h // 2, fill=(0, 0, 0, 80))
+              sh = sh.filter(ImageFilter.GaussianBlur(8))
+              base.alpha_composite(sh)'''.replace('              ', ''),
+              '''    sh = Image.new("RGBA", (w + 24, h + 24), (0, 0, 0, 0))
+              sd = ImageDraw.Draw(sh)
+              sd.rounded_rectangle((4, 4, w + 4, h + 4), radius=h // 2, fill=(0, 0, 0, 75))
+              sh = sh.filter(ImageFilter.GaussianBlur(6))
+              base.alpha_composite(sh, (x1 + 4, y1 + 6))'''.replace('              ', ''),
+          )
+          old_vignette = '''def overlay_vignette(base: Image.Image, amount: float = 0.35) -> None:
+              w, h = base.size
+              yy, xx = np.mgrid[0:h, 0:w]
+              nx = (xx - w / 2) / (w / 2)
+              ny = (yy - h / 2) / (h / 2)
+              dist = np.sqrt(nx * nx + ny * ny)
+              alpha = np.clip((dist - 0.35) / 0.65, 0, 1) * 255 * amount
+              layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+              layer.putalpha(Image.fromarray(alpha.astype(np.uint8), "L"))
+              black = Image.new("RGBA", (w, h), (0, 0, 0, 255))
+              black.putalpha(layer.getchannel("A"))
+              base.alpha_composite(black)
+          '''.replace('              ', '')
+          new_vignette = '''def overlay_vignette(base: Image.Image, amount: float = 0.35) -> None:
+              w, h = base.size
+              key = (w, h, int(round(amount * 1000)))
+              alpha_img = VIGNETTE_CACHE.get(key)
+              if alpha_img is None:
+                  yy, xx = np.mgrid[0:h, 0:w]
+                  nx = (xx - w / 2) / (w / 2)
+                  ny = (yy - h / 2) / (h / 2)
+                  dist = np.sqrt(nx * nx + ny * ny)
+                  alpha = np.clip((dist - 0.35) / 0.65, 0, 1) * 255 * amount
+                  alpha_img = Image.fromarray(alpha.astype(np.uint8), "L")
+                  VIGNETTE_CACHE[key] = alpha_img
+              black = Image.new("RGBA", (w, h), (0, 0, 0, 255))
+              black.putalpha(alpha_img)
+              base.alpha_composite(black)
+          '''.replace('              ', '')
+          if old_vignette not in src:
+              raise SystemExit('vignette patch target not found')
+          src = src.replace(old_vignette, new_vignette)
+          old_load = '    images = {key: Image.open(path).convert("RGB") for key, path in required_images.items()}\n'
+          new_load = '''    images: dict[str, Image.Image] = {}
+              for key, path in required_images.items():
+                  with Image.open(path) as source:
+                      image = source.convert("RGB")
+                      max_side = 1900 if key in {"noko_tree", "noko_pair", "kokuwa", "ookuwa", "miyama_male", "hirata_dorsal"} else 1700
+                      image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+                      images[key] = image.copy()
+          '''.replace('              ', '')
+          if old_load not in src:
+              raise SystemExit('asset load patch target not found')
+          src = src.replace(old_load, new_load)
+          Path('/tmp/build_kuwagata_revision_fast.py').write_text(src, encoding='utf-8')
+          PY
+          python -m py_compile /tmp/build_kuwagata_revision_fast.py
+          sha256sum /tmp/build_kuwagata_revision_fast.py
+
+      - name: Download previously validated real footage pack
+        run: |
+          mkdir -p incoming/pro incoming/images
+          gh run download 31288295927 --repo '${{ github.repository }}' --name kw-pro-assets --dir incoming/pro
+          gh run download 31288093670 --repo '${{ github.repository }}' --name kw-exact-images --dir incoming/images
+
+      - name: Fetch corrected assets
+        run: |
+          python scripts/fetch_kuwagata_revision_v3_assets.py \
+            --images-dir incoming/images \
+            --pro-dir incoming/pro \
+            --out revision_assets
+
+      - name: Start VOICEVOX childlike narration engine
+        run: |
+          docker pull voicevox/voicevox_engine:cpu-latest
+          docker run --rm -d --name voicevox -p 127.0.0.1:50021:50021 voicevox/voicevox_engine:cpu-latest
+          for i in $(seq 1 100); do
+            if curl -fsS http://127.0.0.1:50021/version; then exit 0; fi
+            sleep 3
+          done
+          docker logs voicevox || true
+          exit 1
+
+      - name: Build optimized PC and smartphone videos
+        run: |
+          python /tmp/build_kuwagata_revision_fast.py \
+            --assets revision_assets \
+            --output output_revision_v3_fast \
+            --work work_revision_v3_fast \
+            --voicevox-url http://127.0.0.1:50021 \
+            --fps 24
+          cp revision_assets/revision_asset_montage.jpg output_revision_v3_fast/
+          cp revision_assets/revision_asset_manifest.json output_revision_v3_fast/
+
+      - name: Verify deliverables
+        run: |
+          find output_revision_v3_fast -maxdepth 1 -type f -printf '%f | %s bytes\n' | sort
+          test -s output_revision_v3_fast/Kuwagata_Expedition_Revised_v2_PC_1280x720.mp4
+          test -s output_revision_v3_fast/Kuwagata_Expedition_Revised_v2_Mobile_720x1280.mp4
+          cat output_revision_v3_fast/Kuwagata_Expedition_Revised_v2_QA.json
+          ffmpeg -v error -i output_revision_v3_fast/Kuwagata_Expedition_Revised_v2_PC_1280x720.mp4 -f null -
+          ffmpeg -v error -i output_revision_v3_fast/Kuwagata_Expedition_Revised_v2_Mobile_720x1280.mp4 -f null -
+
+      - name: Stop VOICEVOX
+        if: always()
+        run: docker rm -f voicevox >/dev/null 2>&1 || true
+
+      - name: Upload optimized revised videos
+        uses: actions/upload-artifact@v4
+        with:
+          name: kuwagata-expedition-revision-v3-fast
+          path: output_revision_v3_fast/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
