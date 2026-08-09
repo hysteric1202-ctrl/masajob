@@ -28,7 +28,10 @@ jobs:
           sudo apt-get install -y ffmpeg fonts-noto-cjk
 
       - name: Research reference and related YouTube videos
-        run: python scripts/research_kuwagata_youtube.py
+        run: |
+          # YouTube may require login for the exact reference download. Search metadata and
+          # thumbnail research are still retained and uploaded when that happens.
+          python scripts/research_kuwagata_youtube.py || true
 
       - name: List outputs
         run: find research_kuwagata -maxdepth 2 -type f -printf '%p | %s bytes\n' | sort
