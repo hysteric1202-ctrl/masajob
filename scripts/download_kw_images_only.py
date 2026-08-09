@@ -14,11 +14,11 @@ ASSETS=[
  {'key':'noko_tree','filename':'ミズナラにとまるノコギリクワガタ.JPG','local':'noko_tree.jpg','author':'Kinokoekuwagata','license':'CC BY-SA 4.0','source_page':'https://commons.wikimedia.org/wiki/File:ミズナラにとまるノコギリクワガタ.JPG'},
  {'key':'noko_pair','filename':'ヤナギの樹上のノコギリクワガタつがい.jpg','local':'noko_pair.jpg','author':'K fumishima','license':'CC BY-SA 4.0','source_page':'https://commons.wikimedia.org/wiki/File:ヤナギの樹上のノコギリクワガタつがい.jpg'},
  {'key':'kokuwa','filename':'Dorcus rectus.jpg','local':'kokuwa.jpg','author':'takato marui','license':'CC BY-SA 2.0','source_page':'https://commons.wikimedia.org/wiki/File:Dorcus_rectus.jpg'},
- {'key':'miyama','filename':'Lucanus maculifemoratus 01.jpg','local':'miyama.jpg','author':'Σ64','license':'CC BY 3.0 / GFDL','source_page':'https://commons.wikimedia.org/wiki/File:Lucanus_maculifemoratus_01.jpg'},
+ {'key':'miyama','filename':'ミズナラのミヤマクワガタ.JPG','local':'miyama.jpg','author':'Kinokoekuwagata','license':'CC BY-SA 4.0','source_page':'https://commons.wikimedia.org/wiki/File:ミズナラのミヤマクワガタ.JPG'},
  {'key':'hirata','filename':'Dorcus titanus pilifer (Vollenhoven,1861).jpg','local':'hirata.jpg','author':'takato marui','license':'CC BY-SA 2.0','source_page':'https://commons.wikimedia.org/wiki/File:Dorcus_titanus_pilifer_(Vollenhoven,1861).jpg'},
  {'key':'ookuwa','filename':'Dorcushopeibinodulosus.JPG','local':'ookuwa.jpg','author':'keusju','license':'CC BY-SA 3.0 / GFDL','source_page':'https://commons.wikimedia.org/wiki/File:Dorcushopeibinodulosus.JPG'},
 ]
-HEADERS={'User-Agent':'KuwagataTVProject/2.5','Referer':'https://commons.wikimedia.org/','Accept':'image/*,*/*;q=0.8'}
+HEADERS={'User-Agent':'KuwagataTVProject/2.6','Referer':'https://commons.wikimedia.org/','Accept':'image/*,*/*;q=0.8'}
 
 def original_url(filename: str) -> str:
     normalized=filename.replace(' ','_')
@@ -28,18 +28,18 @@ def original_url(filename: str) -> str:
 
 def get_one(a):
     url=original_url(a['filename']); target=OUT/a['local']; last=None
-    for attempt in range(5):
+    for attempt in range(7):
         try:
-            r=requests.get(url,headers=HEADERS,timeout=(20,180),allow_redirects=True)
+            r=requests.get(url,headers=HEADERS,timeout=(20,240),allow_redirects=True)
             if r.status_code!=200 or 'image' not in r.headers.get('content-type','').lower() or len(r.content)<1000:
                 raise RuntimeError(f'{r.status_code} {r.headers.get("content-type")} {len(r.content)} {r.url}')
             target.write_bytes(r.content)
             with Image.open(target) as im: im.load(); size=im.size
             print('OK',a['key'],target.stat().st_size,size,flush=True)
-            time.sleep(1.2)
+            time.sleep(3)
             return {**a,'bytes':target.stat().st_size,'size':size,'url':r.url}
         except Exception as e:
-            last=e; print('RETRY',a['key'],repr(e),flush=True); time.sleep(5+attempt*5)
+            last=e; print('RETRY',a['key'],repr(e),flush=True); time.sleep(min(10+attempt*10,70))
     raise RuntimeError(f'{a["key"]}: {last}')
 
 def montage(rows):
