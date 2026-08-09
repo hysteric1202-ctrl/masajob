@@ -1,0 +1,330 @@
+name: Generate Kuwagata 10min Child Audio v1
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/generate-kuwagata-10min-audio-v1.yml'
+
+concurrency:
+  group: kuwagata-10min-audio-v1
+  cancel-in-progress: true
+
+jobs:
+  audio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy requests
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+
+      - name: Start VOICEVOX
+        run: |
+          docker pull voicevox/voicevox_engine:cpu-latest
+          docker run --rm -d --name voicevox -p 127.0.0.1:50021:50021 voicevox/voicevox_engine:cpu-latest
+          for i in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:50021/version; then
+              echo
+              echo 'VOICEVOX ready.'
+              exit 0
+            fi
+            sleep 3
+          done
+          docker logs voicevox || true
+          exit 1
+
+      - name: Generate narration, music, SFX, SRT
+        run: |
+          mkdir -p output work/voice
+          python - <<'PY'
+          from __future__ import annotations
+          import json, math, subprocess, time, wave
+          from pathlib import Path
+          import numpy as np
+          import requests
+
+          DURATION = 600.0
+          SR = 48000
+          OUT = Path('output')
+          WORK = Path('work')
+          BASE = 'http://127.0.0.1:50021'
+
+          UTTERANCES = [
+              (0.55,2.70,'クワガタ たんけんたい！'),
+              (2.90,5.75,'もりへ、さがしに いこう！'),
+              (6.65,9.20,'クワガタ、どこかな？'),
+              (9.45,11.65,'あっ、みつけた！'),
+              (12.10,15.10,'ほんものの クワガタが、うごいてる！'),
+              (15.25,18.15,'きの うえを、のぼっているよ。'),
+              (18.30,21.70,'おおきな あご、かっこいい！'),
+              (23.10,26.10,'これは、ノコギリクワガタ。'),
+              (26.30,29.75,'ぎざぎざの おおあごが、めじるし！'),
+              (29.95,33.25,'からだは、あかちゃいろの ことも あるよ。'),
+              (34.05,37.25,'にほんの、いろいろな もりに いるよ。'),
+              (37.45,40.55,'コナラや クヌギの じゅえきが、だいすき！'),
+              (40.70,43.65,'あるいている すがたも、みてみよう。'),
+              (44.10,46.75,'ここで クイズ！'),
+              (46.95,50.45,'ぎざぎざの おおあごは、どっち？'),
+              (52.70,55.85,'せいかいは、ビー！ ノコギリクワガタ！'),
+              (56.75,59.70,'つぎは、ミヤマや ヒラタも みてみよう！'),
+              (60.55,64.30,'それじゃあ、5しゅるいを、じっくり みてみよう！'),
+              (65.20,68.55,'さいしょは、コクワガタ！'),
+              (70.00,74.10,'コクワガタは、からだが ちいさめ。'),
+              (76.00,80.20,'でも、げんきに てくてく あるくよ。'),
+              (82.00,86.25,'おおあごは、まっすぐで、すっきり。'),
+              (88.00,92.20,'よるになると、きの じゅえきに あつまるよ。'),
+              (96.00,100.20,'ほっかいどうから、きゅうしゅうまで。'),
+              (102.00,106.30,'にほんの いろいろな ところに いるんだ。'),
+              (108.00,112.40,'まちの ちかくの はやしでも、みつかることが あるよ。'),
+              (116.00,120.25,'クイズ。ちいさめの クワガタは、だれ？'),
+              (124.00,128.10,'せいかいは、コクワガタ！'),
+              (132.00,136.20,'いっしょに いおう。コクワガタ！'),
+              (140.00,144.30,'コクワガタ、ばっちり おぼえたね。'),
+              (145.55,149.10,'つぎは、ノコギリクワガタ！'),
+              (151.00,155.20,'おおきな おおあごが、ぐーんと まがっているよ。'),
+              (157.00,161.10,'うちがわは、ぎざぎざ。'),
+              (163.00,167.20,'ノコギリみたいで、かっこいい！'),
+              (170.00,174.20,'からだは、あかちゃいろに みえることも あるよ。'),
+              (176.00,180.20,'ひらちや、ひくい おやまの はやしが すき。'),
+              (182.00,186.30,'ほっかいどうから、きゅうしゅうまで いるよ。'),
+              (190.00,194.25,'ほんものの クワガタの なかまが、きを のぼっている！'),
+              (197.00,201.25,'あしを つかって、しっかり つかまるんだ。'),
+              (204.00,208.20,'クイズ。ぎざぎざの おおあごは、どっち？'),
+              (212.00,216.15,'よーく みて。さん、に、いち。'),
+              (218.00,222.25,'せいかいは、ビー！ ノコギリクワガタ！'),
+              (225.00,229.30,'ノコギリクワガタ！ もう まちがえないね。'),
+              (230.55,234.15,'つぎは、ミヤマクワガタ！'),
+              (236.00,240.20,'ミヤマは、ふかい おやま、という いみ。'),
+              (242.00,246.20,'すずしい おやまが だいすき。'),
+              (248.00,252.25,'オスは、おおきな おおあごを もっているよ。'),
+              (254.00,258.40,'あたまの よこが、ぐっと ひろがっているのも めじるし。'),
+              (260.00,264.20,'からだには、きんいろの けが みえることも。'),
+              (266.00,270.20,'ほっかいどうから、きゅうしゅうまで。'),
+              (272.00,276.40,'でも、あつい まちより、すずしい おやまに おおいよ。'),
+              (280.00,284.20,'おやまの もりを、のぞいてみよう。'),
+              (288.00,292.20,'クイズ。すずしい おやまが すきなのは？'),
+              (296.00,300.10,'さん、に、いち。'),
+              (302.00,306.20,'せいかいは、ミヤマクワガタ！'),
+              (309.00,314.20,'ミヤマクワガタ。おやまの クワガタだね。'),
+              (315.55,319.10,'つぎは、ヒラタクワガタ！'),
+              (321.00,325.20,'からだが、ひらたくて、がっしり。'),
+              (327.00,331.30,'うえから みると、せなかの はねが よく わかるよ。'),
+              (333.00,337.30,'きの すきまに、ぺたんと かくれるのが とくい。'),
+              (339.00,343.20,'あたたかい ところが だいすき。'),
+              (345.00,349.40,'ほんしゅう、しこく、きゅうしゅう、おきなわに いるよ。'),
+              (351.00,355.20,'みなみへ いくほど、であいやすくなるよ。'),
+              (358.00,362.20,'くろくて つよそう。おおあごも がっしり。'),
+              (365.00,369.30,'ほんものの クワガタの なかまも、てくてく あるいている。'),
+              (372.00,376.20,'クイズ。あたたかい ところが すきなのは？'),
+              (380.00,384.10,'さん、に、いち。'),
+              (386.00,390.20,'せいかいは、ヒラタクワガタ！'),
+              (393.00,399.10,'ヒラタクワガタ。ひらたい からだが めじるし。'),
+              (400.55,404.10,'さいごは、オオクワガタ！'),
+              (406.00,410.20,'おおきくて、くろくて、かっこいい。'),
+              (412.00,416.20,'おおあごは、ふとくて つよそう。'),
+              (418.00,422.20,'ふるい きが ある もりが すき。'),
+              (424.00,428.30,'きの あなや、かわの すきまに かくれるよ。'),
+              (430.00,434.40,'ほっかいどうから、きゅうしゅうまで、ところどころに いるんだ。'),
+              (436.00,440.20,'でも、どこにでも いる わけじゃないよ。'),
+              (442.00,446.15,'みつけたら、とっても すごい！'),
+              (448.00,452.20,'かくれんぼ じょうずの オオクワガタ。'),
+              (455.00,459.20,'クイズ。いちばん おおきな なまえは、だれ？'),
+              (463.00,467.10,'さん、に、いち。'),
+              (469.00,473.20,'せいかいは、オオクワガタ！'),
+              (476.00,484.20,'オオクワガタ。ふるい もりの かくれんぼ めいじん。'),
+              (485.55,489.20,'こんどは、すむ ばしょ ゲーム！'),
+              (491.00,495.20,'まちの ちかくの はやしで、あいやすいのは？'),
+              (498.00,502.10,'せいかいは、コクワガタ！'),
+              (504.00,508.20,'すずしい おやまが すきなのは？'),
+              (511.00,515.10,'せいかいは、ミヤマクワガタ！'),
+              (517.00,521.20,'あたたかい みなみが すきなのは？'),
+              (524.00,528.20,'せいかいは、ヒラタクワガタ！'),
+              (530.00,534.20,'ふるい きの あなに かくれるのは？'),
+              (536.00,539.70,'オオクワガタ！ ぜんぶ できたかな？'),
+              (540.55,544.20,'なまえを、リズムに あわせて いってみよう！'),
+              (546.00,549.10,'コクワガタ！'),
+              (551.00,554.10,'ノコギリクワガタ！'),
+              (556.00,559.10,'ミヤマクワガタ！'),
+              (561.00,564.10,'ヒラタクワガタ！'),
+              (566.00,569.10,'オオクワガタ！'),
+              (571.00,574.60,'5しゅるい、ぜんぶ おぼえたね！'),
+              (575.55,579.20,'もりで クワガタを みつけたら、やさしく みよう。'),
+              (581.00,585.20,'きを けずったり、えだを おったり しないでね。'),
+              (587.00,591.20,'よるに さがすときは、おとなと いっしょ。'),
+              (593.00,597.10,'クワガタ たんけんたい、だいせいこう！'),
+              (597.20,599.90,'また いっしょに さがそう！'),
+          ]
+
+          SFX = [
+              (0.2,'sparkle'),(0.55,'pop'),(2.85,'whoosh'),(6.45,'whoosh'),(9.35,'pop'),
+              (11.9,'whoosh'),(18.1,'ding'),(22.85,'whoosh'),(26.2,'rattle'),(33.9,'whoosh'),
+              (40.5,'whoosh'),(43.95,'quiz'),(50.7,'tick'),(51.45,'tick'),(52.2,'tick'),(52.65,'answer'),
+              (60.0,'whoosh'),(65.0,'pop'),(115.7,'quiz'),(121.0,'tick'),(122.0,'tick'),(123.0,'tick'),(123.8,'answer'),
+              (145.0,'whoosh'),(204.0,'quiz'),(212.5,'tick'),(214.0,'tick'),(215.5,'tick'),(217.7,'answer'),
+              (230.0,'whoosh'),(288.0,'quiz'),(296.4,'tick'),(298.0,'tick'),(299.5,'tick'),(301.7,'answer'),
+              (315.0,'whoosh'),(372.0,'quiz'),(380.4,'tick'),(382.0,'tick'),(383.5,'tick'),(385.7,'answer'),
+              (400.0,'whoosh'),(455.0,'quiz'),(463.4,'tick'),(465.0,'tick'),(466.5,'tick'),(468.7,'answer'),
+              (485.0,'whoosh'),(497.7,'answer'),(510.7,'answer'),(523.7,'answer'),(535.7,'answer'),
+              (540.0,'sparkle'),(545.8,'pop'),(550.8,'pop'),(555.8,'pop'),(560.8,'pop'),(565.8,'pop'),
+              (570.8,'sparkle'),(592.8,'sparkle'),(597.0,'answer')
+          ]
+
+          def run(cmd):
+              print('RUN:', ' '.join(map(str,cmd)), flush=True)
+              subprocess.run(cmd, check=True)
+
+          def duration(path):
+              cp=subprocess.run(['ffprobe','-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',str(path)],capture_output=True,text=True,check=True)
+              return float(cp.stdout.strip())
+
+          def atempo_chain(f):
+              parts=[]
+              while f>2: parts.append(2.0); f/=2
+              while f<0.5: parts.append(0.5); f/=0.5
+              parts.append(f)
+              return ','.join(f'atempo={p:.6f}' for p in parts)
+
+          def wait_voicevox():
+              for _ in range(140):
+                  try:
+                      r=requests.get(BASE+'/version',timeout=4)
+                      if r.ok: return
+                  except requests.RequestException: pass
+                  time.sleep(3)
+              raise RuntimeError('VOICEVOX not ready')
+
+          def find_speaker():
+              data=requests.get(BASE+'/speakers',timeout=30).json()
+              for sp in data:
+                  if sp.get('name')=='ずんだもん':
+                      for st in sp.get('styles',[]):
+                          if st.get('name')=='ノーマル': return int(st['id'])
+                      return int(sp['styles'][0]['id'])
+              raise RuntimeError('speaker not found')
+
+          def envelope(n,attack=0.01,release=0.12):
+              e=np.ones(n,np.float32); a=min(n,int(SR*attack)); r=min(n,int(SR*release))
+              if a: e[:a]=np.linspace(0,1,a,dtype=np.float32)
+              if r: e[-r:]=np.linspace(1,0,r,dtype=np.float32)
+              return e
+
+          def add_note(track,start,dur,freq,amp):
+              pos=int(start*SR); n=min(len(track)-pos,int(dur*SR))
+              if n<=0:return
+              tt=np.arange(n,dtype=np.float32)/SR
+              y=(np.sin(2*np.pi*freq*tt)+0.25*np.sin(2*np.pi*freq*2*tt))*envelope(n,0.006,min(0.16,dur*0.42))*amp
+              track[pos:pos+n]+=y
+
+          def sfx(kind):
+              rng=np.random.default_rng(abs(hash(kind))%(2**32))
+              if kind=='whoosh':
+                  dur=.42;n=int(SR*dur);tt=np.arange(n)/SR;noise=rng.normal(0,1,n);sm=np.convolve(noise,np.ones(70)/70,mode='same');y=sm*np.sin(np.pi*tt/dur)**2*.75
+              elif kind=='pop':
+                  dur=.25;n=int(SR*dur);tt=np.arange(n)/SR;y=np.sin(2*np.pi*(720*tt-380*tt*tt/(2*dur)))*np.exp(-13*tt)*.80
+              elif kind=='ding':
+                  dur=.68;n=int(SR*dur);tt=np.arange(n)/SR;y=(np.sin(2*np.pi*880*tt)+.45*np.sin(2*np.pi*1320*tt))*np.exp(-5.5*tt)*.44
+              elif kind=='sparkle':
+                  dur=.9;n=int(SR*dur);y=np.zeros(n)
+                  for st,f in [(0,1175),(.12,1480),(.25,1760),(.39,2349)]:
+                      pos=int(st*SR);t2=np.arange(n-pos)/SR;y[pos:]+=np.sin(2*np.pi*f*t2)*np.exp(-8*t2)*.24
+              elif kind=='rattle':
+                  dur=.5;n=int(SR*dur);y=np.zeros(n)
+                  for st in np.arange(0,dur,.07):
+                      pos=int(st*SR);n2=min(int(.06*SR),n-pos);t2=np.arange(n2)/SR;y[pos:pos+n2]+=np.sin(2*np.pi*(520+st*280)*t2)*np.exp(-35*t2)*.32
+              elif kind=='tick':
+                  dur=.12;n=int(SR*dur);tt=np.arange(n)/SR;y=np.sin(2*np.pi*1200*tt)*np.exp(-35*tt)*.30
+              elif kind=='quiz':
+                  dur=.52;n=int(SR*dur);tt=np.arange(n)/SR;y=(np.sin(2*np.pi*440*tt)+.55*np.sin(2*np.pi*660*tt))*np.exp(-4.2*tt)*.35
+              else:
+                  dur=1.05;n=int(SR*dur);y=np.zeros(n)
+                  for st,f in [(0,523),(.13,659),(.26,784),(.39,1047)]:
+                      pos=int(st*SR);t2=np.arange(n-pos)/SR;y[pos:]+=np.sin(2*np.pi*f*t2)*np.exp(-5*t2)*.28
+              return np.asarray(y,np.float32)
+
+          wait_voicevox(); speaker=find_speaker(); print('speaker',speaker)
+          n=int(DURATION*SR)
+          music=np.zeros(n,np.float32)
+          patterns=[
+              [523.25,659.25,783.99,659.25,587.33,698.46,880.00,783.99],
+              [392.00,493.88,587.33,493.88,440.00,523.25,659.25,587.33],
+              [440.00,554.37,659.25,554.37,493.88,587.33,698.46,659.25],
+          ]
+          beat=.50
+          for i,start in enumerate(np.arange(0,DURATION,beat)):
+              patt=patterns[int(start//85)%len(patterns)]; f=patt[i%len(patt)]
+              add_note(music,float(start),.29,f,.050)
+              if i%2==0:add_note(music,float(start),.17,f/2,.031)
+          for st in np.arange(0,DURATION,1.0): add_note(music,float(st),.17,130.81,.032)
+          for st,kind in SFX:
+              y=sfx(kind);pos=int(st*SR);count=min(len(y),n-pos)
+              if count>0: music[pos:pos+count]+=y[:count]
+
+          voice_total=np.zeros(n,np.float32)
+          duck=np.ones(n,np.float32)
+          voice_dir=WORK/'voice';voice_dir.mkdir(parents=True,exist_ok=True)
+          manifest=[]
+          for idx,(start,end,text) in enumerate(UTTERANCES):
+              q=requests.post(BASE+'/audio_query',params={'speaker':speaker,'text':text},timeout=60);q.raise_for_status();payload=q.json()
+              payload['speedScale']=1.08;payload['pitchScale']=0.035;payload['intonationScale']=1.18;payload['volumeScale']=1.08;payload['prePhonemeLength']=.08;payload['postPhonemeLength']=.10
+              r=requests.post(BASE+'/synthesis',params={'speaker':speaker},json=payload,timeout=180);r.raise_for_status()
+              raw=voice_dir/f'{idx:03d}_raw.wav';raw.write_bytes(r.content)
+              fitted=voice_dir/f'{idx:03d}.wav';dur=duration(raw);slot=max(.25,end-start-.10)
+              filt=[]
+              if dur>slot:filt.append(atempo_chain(dur/slot))
+              filt += ['highpass=f=90','lowpass=f=12000','acompressor=threshold=-20dB:ratio=2.2:attack=10:release=80','volume=1.15']
+              run(['ffmpeg','-y','-v','error','-i',str(raw),'-af',','.join(filt),'-ar',str(SR),'-ac','1','-c:a','pcm_s16le',str(fitted)])
+              with wave.open(str(fitted),'rb') as wf:
+                  arr=np.frombuffer(wf.readframes(wf.getnframes()),dtype='<i2').astype(np.float32)/32768.0
+              pos=int(start*SR);count=min(len(arr),n-pos);voice_total[pos:pos+count]+=arr[:count]
+              d0=max(0,pos-int(.12*SR));d1=min(n,pos+count+int(.20*SR));duck[d0:d1]=np.minimum(duck[d0:d1],.48)
+              manifest.append({'start':start,'end':end,'text':text,'file':fitted.name})
+              print(idx+1,'/',len(UTTERANCES),text,flush=True)
+
+          smooth=np.ones(801,np.float32)/801
+          duck=np.convolve(duck,smooth,mode='same')
+          mix=music*.52*duck+voice_total
+          peak=max(.001,float(np.max(np.abs(mix))));mix=np.clip(mix*(.92/peak),-.98,.98)
+          stereo=np.column_stack([mix,mix]);pcm=(stereo*32767).astype('<i2')
+          wav=WORK/'kuwagata_10min_mix.wav'
+          with wave.open(str(wav),'wb') as wf:
+              wf.setnchannels(2);wf.setsampwidth(2);wf.setframerate(SR);wf.writeframes(pcm.tobytes())
+          m4a=OUT/'Kuwagata_Expedition_10min_ChildVoice_v1.m4a'
+          run(['ffmpeg','-y','-v','error','-i',str(wav),'-t',str(DURATION),'-c:a','aac','-b:a','192k',str(m4a)])
+
+          def tc(sec):
+              ms=int(round(sec*1000));h=ms//3600000;ms%=3600000;m=ms//60000;ms%=60000;s=ms//1000;ms%=1000
+              return f'{h:02d}:{m:02d}:{s:02d},{ms:03d}'
+          lines=[]
+          for i,(st,en,text) in enumerate(UTTERANCES,1): lines += [str(i),f'{tc(st)} --> {tc(en)}',text,'']
+          (OUT/'Kuwagata_Expedition_10min_JP.srt').write_text('\n'.join(lines),encoding='utf-8')
+          (OUT/'audio_manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
+          print('DONE',m4a,m4a.stat().st_size)
+          PY
+          ffprobe -v error -show_entries format=duration,size -of default=nw=1 output/Kuwagata_Expedition_10min_ChildVoice_v1.m4a
+
+      - name: Stop VOICEVOX
+        if: always()
+        run: docker rm -f voicevox >/dev/null 2>&1 || true
+
+      - name: Upload audio artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kuwagata-10min-audio-v1
+          path: output/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
