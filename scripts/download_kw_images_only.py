@@ -11,22 +11,20 @@ from PIL import Image, ImageDraw, ImageFont
 
 OUT=Path('kw_image_assets'); OUT.mkdir(exist_ok=True)
 ASSETS=[
- {'key':'noko_tree','filename':'ミズナラにとまるノコギリクワガタ.JPG','local':'noko_tree.jpg'},
- {'key':'noko_pair','filename':'ヤナギの樹上のノコギリクワガタつがい.jpg','local':'noko_pair.jpg'},
- {'key':'kokuwa','filename':'Dorcus rectus (20806302162).jpg','local':'kokuwa.jpg'},
- {'key':'miyama','filename':'Lucanus maculifemoratus in Hiroshima Prefecture 01.jpg','local':'miyama.jpg'},
- {'key':'hirata','filename':'Dorcus titanus pilifer (Vollenhoven,1861).jpg','local':'hirata.jpg'},
- {'key':'ookuwa','filename':'オオクワガタ.JPG','local':'ookuwa.jpg'},
+ {'key':'noko_tree','filename':'ミズナラにとまるノコギリクワガタ.JPG','local':'noko_tree.jpg','author':'Kinokoekuwagata','license':'CC BY-SA 4.0','source_page':'https://commons.wikimedia.org/wiki/File:ミズナラにとまるノコギリクワガタ.JPG'},
+ {'key':'noko_pair','filename':'ヤナギの樹上のノコギリクワガタつがい.jpg','local':'noko_pair.jpg','author':'K fumishima','license':'CC BY-SA 4.0','source_page':'https://commons.wikimedia.org/wiki/File:ヤナギの樹上のノコギリクワガタつがい.jpg'},
+ {'key':'kokuwa','filename':'Dorcus rectus.jpg','local':'kokuwa.jpg','author':'takato marui','license':'CC BY-SA 2.0','source_page':'https://commons.wikimedia.org/wiki/File:Dorcus_rectus.jpg'},
+ {'key':'miyama','filename':'Lucanus maculifemoratus 01.jpg','local':'miyama.jpg','author':'Σ64','license':'CC BY 3.0 / GFDL','source_page':'https://commons.wikimedia.org/wiki/File:Lucanus_maculifemoratus_01.jpg'},
+ {'key':'hirata','filename':'Dorcus titanus pilifer (Vollenhoven,1861).jpg','local':'hirata.jpg','author':'takato marui','license':'CC BY-SA 2.0','source_page':'https://commons.wikimedia.org/wiki/File:Dorcus_titanus_pilifer_(Vollenhoven,1861).jpg'},
+ {'key':'ookuwa','filename':'Dorcushopeibinodulosus.JPG','local':'ookuwa.jpg','author':'keusju','license':'CC BY-SA 3.0 / GFDL','source_page':'https://commons.wikimedia.org/wiki/File:Dorcushopeibinodulosus.JPG'},
 ]
-HEADERS={'User-Agent':'KuwagataTVProject/2.3','Referer':'https://commons.wikimedia.org/','Accept':'image/*,*/*;q=0.8'}
-
+HEADERS={'User-Agent':'KuwagataTVProject/2.5','Referer':'https://commons.wikimedia.org/','Accept':'image/*,*/*;q=0.8'}
 
 def original_url(filename: str) -> str:
     normalized=filename.replace(' ','_')
     digest=hashlib.md5(normalized.encode('utf-8')).hexdigest()
     encoded=quote(normalized,safe='()_,.-')
     return f'https://upload.wikimedia.org/wikipedia/commons/{digest[0]}/{digest[:2]}/{encoded}'
-
 
 def get_one(a):
     url=original_url(a['filename']); target=OUT/a['local']; last=None
@@ -43,7 +41,6 @@ def get_one(a):
         except Exception as e:
             last=e; print('RETRY',a['key'],repr(e),flush=True); time.sleep(5+attempt*5)
     raise RuntimeError(f'{a["key"]}: {last}')
-
 
 def montage(rows):
     font=ImageFont.load_default()
