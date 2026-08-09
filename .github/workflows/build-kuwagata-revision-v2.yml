@@ -1,0 +1,105 @@
+name: Build Kuwagata Expedition Revision v2
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/build_kuwagata_revision_v2.py'
+      - 'scripts/fetch_kuwagata_revision_v2_assets.py'
+      - '.github/workflows/build-kuwagata-revision-v2.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install media and rendering dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pillow numpy requests opencv-python-headless
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-noto-cjk librsvg2-bin jq
+          ffmpeg -version | head -n 2
+          docker --version
+
+      - name: Download previously validated real footage pack
+        run: |
+          mkdir -p incoming/pro incoming/images
+          gh run download 31288295927 --repo '${{ github.repository }}' --name kw-pro-assets --dir incoming/pro
+          gh run download 31288093670 --repo '${{ github.repository }}' --name kw-exact-images --dir incoming/images
+          find incoming -type f -printf '%p | %s bytes\n' | sort
+
+      - name: Fetch corrected forest, male Miyama, dorsal Hirata and expedition assets
+        run: |
+          python scripts/fetch_kuwagata_revision_v2_assets.py \
+            --images-dir incoming/images \
+            --pro-dir incoming/pro \
+            --out revision_assets
+          find revision_assets -maxdepth 1 -type f -printf '%f | %s bytes\n' | sort
+          cat revision_assets/revision_asset_manifest.json
+
+      - name: Start VOICEVOX childlike narration engine
+        run: |
+          docker pull voicevox/voicevox_engine:cpu-latest
+          docker run --rm -d --name voicevox -p 127.0.0.1:50021:50021 voicevox/voicevox_engine:cpu-latest
+          for i in $(seq 1 100); do
+            if curl -fsS http://127.0.0.1:50021/version; then
+              echo
+              echo 'VOICEVOX is ready.'
+              exit 0
+            fi
+            sleep 3
+          done
+          docker logs voicevox || true
+          exit 1
+
+      - name: Build revised PC and smartphone videos
+        run: |
+          python scripts/build_kuwagata_revision_v2.py \
+            --assets revision_assets \
+            --output output_revision_v2 \
+            --work work_revision_v2 \
+            --voicevox-url http://127.0.0.1:50021 \
+            --fps 24
+          cp revision_assets/revision_asset_montage.jpg output_revision_v2/
+          cp revision_assets/revision_asset_manifest.json output_revision_v2/
+
+      - name: Verify deliverables
+        run: |
+          find output_revision_v2 -maxdepth 1 -type f -printf '%f | %s bytes\n' | sort
+          test -s output_revision_v2/Kuwagata_Expedition_Revised_v2_PC_1280x720.mp4
+          test -s output_revision_v2/Kuwagata_Expedition_Revised_v2_Mobile_720x1280.mp4
+          test -s output_revision_v2/Kuwagata_Expedition_Revised_v2_PC_Contact.jpg
+          test -s output_revision_v2/Kuwagata_Expedition_Revised_v2_Mobile_Contact.jpg
+          test -s output_revision_v2/Kuwagata_Expedition_Revised_v2_QA.json
+          cat output_revision_v2/Kuwagata_Expedition_Revised_v2_QA.json
+          ffmpeg -v error -i output_revision_v2/Kuwagata_Expedition_Revised_v2_PC_1280x720.mp4 -f null -
+          ffmpeg -v error -i output_revision_v2/Kuwagata_Expedition_Revised_v2_Mobile_720x1280.mp4 -f null -
+
+      - name: Stop VOICEVOX
+        if: always()
+        run: docker rm -f voicevox >/dev/null 2>&1 || true
+
+      - name: Upload revised videos and QA package
+        uses: actions/upload-artifact@v4
+        with:
+          name: kuwagata-expedition-revision-v2
+          path: output_revision_v2/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
