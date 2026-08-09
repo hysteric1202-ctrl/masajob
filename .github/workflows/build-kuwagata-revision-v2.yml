@@ -5,8 +5,12 @@ on:
   push:
     paths:
       - 'scripts/build_kuwagata_revision_v2.py'
-      - 'scripts/fetch_kuwagata_revision_v2_assets.py'
+      - 'scripts/fetch_kuwagata_revision_v3_assets.py'
       - '.github/workflows/build-kuwagata-revision-v2.yml'
+
+concurrency:
+  group: kuwagata-expedition-revision-v2
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -46,7 +50,7 @@ jobs:
 
       - name: Fetch corrected forest, male Miyama, dorsal Hirata and expedition assets
         run: |
-          python scripts/fetch_kuwagata_revision_v2_assets.py \
+          python scripts/fetch_kuwagata_revision_v3_assets.py \
             --images-dir incoming/images \
             --pro-dir incoming/pro \
             --out revision_assets
