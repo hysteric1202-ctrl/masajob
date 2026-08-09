@@ -1,0 +1,140 @@
+name: Build Kuwagata Expedition Revision v5 Parallel
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-kuwagata-revision-v5-parallel.yml'
+
+concurrency:
+  group: kuwagata-expedition-revision-v5-parallel
+  cancel-in-progress: true
+
+jobs:
+  assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install asset tools
+        run: |
+          pip install pillow requests
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-noto-cjk librsvg2-bin
+      - name: Download validated source packs
+        run: |
+          mkdir -p incoming/pro incoming/images
+          gh run download 31288295927 --repo '${{ github.repository }}' --name kw-pro-assets --dir incoming/pro
+          gh run download 31288093670 --repo '${{ github.repository }}' --name kw-exact-images --dir incoming/images
+      - name: Build corrected visual assets
+        run: |
+          python scripts/fetch_kuwagata_revision_v4_assets.py \
+            --images-dir incoming/images \
+            --pro-dir incoming/pro \
+            --out revision_assets_v5
+          find revision_assets_v5 -maxdepth 1 -type f -printf '%f | %s bytes\n' | sort
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kuwagata-revision-v5-assets
+          path: revision_assets_v5/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  render:
+    needs: assets
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [pc, mobile]
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    permissions:
+      contents: read
+      actions: read
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install render dependencies
+        run: |
+          pip install pillow numpy requests opencv-python-headless
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-noto-cjk patch
+      - name: Apply verified rendering optimization
+        run: |
+          patch -p1 < scripts/build_kuwagata_revision_fast.patch
+          python -m py_compile scripts/build_kuwagata_revision_v2.py scripts/render_kuwagata_revision_single.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: kuwagata-revision-v5-assets
+          path: revision_assets_v5
+      - name: Start childlike VOICEVOX narration
+        run: |
+          docker pull voicevox/voicevox_engine:cpu-latest
+          docker run --rm -d --name voicevox -p 127.0.0.1:50021:50021 voicevox/voicevox_engine:cpu-latest
+          for i in $(seq 1 100); do
+            if curl -fsS http://127.0.0.1:50021/version; then exit 0; fi
+            sleep 3
+          done
+          docker logs voicevox || true
+          exit 1
+      - name: Render ${{ matrix.mode }} version
+        run: |
+          python scripts/render_kuwagata_revision_single.py \
+            --mode '${{ matrix.mode }}' \
+            --assets revision_assets_v5 \
+            --output 'output_${{ matrix.mode }}' \
+            --work 'work_${{ matrix.mode }}' \
+            --voicevox-url http://127.0.0.1:50021 \
+            --fps 24
+          find 'output_${{ matrix.mode }}' -maxdepth 1 -type f -printf '%f | %s bytes\n' | sort
+      - name: Stop VOICEVOX
+        if: always()
+        run: docker rm -f voicevox >/dev/null 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kuwagata-revision-v5-${{ matrix.mode }}
+          path: output_${{ matrix.mode }}/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  collect:
+    needs: render
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kuwagata-revision-v5-*
+          path: collected
+          merge-multiple: true
+      - name: Verify combined package
+        run: |
+          find collected -maxdepth 1 -type f -printf '%f | %s bytes\n' | sort
+          test -s collected/Kuwagata_Expedition_Revised_v5_PC_1280x720.mp4
+          test -s collected/Kuwagata_Expedition_Revised_v5_Mobile_720x1280.mp4
+          ffmpeg -v error -i collected/Kuwagata_Expedition_Revised_v5_PC_1280x720.mp4 -f null -
+          ffmpeg -v error -i collected/Kuwagata_Expedition_Revised_v5_Mobile_720x1280.mp4 -f null -
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kuwagata-expedition-revision-v5-final
+          path: collected/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
