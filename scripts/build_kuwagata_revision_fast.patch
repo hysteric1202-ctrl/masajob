@@ -1,0 +1,113 @@
+--- a/scripts/build_kuwagata_revision_v2.py
++++ b/scripts/build_kuwagata_revision_v2.py
+@@ -45,6 +45,8 @@
+     "black": (24, 28, 30),
+ }
+ 
++VIGNETTE_CACHE: dict[tuple[int, int, int], Image.Image] = {}
++
+ UTTERANCES = [
+     (0.55, 2.70, "クワガタ たんけんたい！"),
+     (2.90, 5.75, "もりへ、さがしに いこう！"),
+@@ -125,7 +127,7 @@
+     src = img.convert("RGB")
+     scale = max(tw / src.width, th / src.height) * zoom
+     nw, nh = max(1, int(src.width * scale)), max(1, int(src.height * scale))
+-    src = src.resize((nw, nh), Image.Resampling.LANCZOS)
++    src = src.resize((nw, nh), Image.Resampling.BICUBIC)
+     cx = int((nw - tw) * crop[0])
+     cy = int((nh - th) * crop[1])
+     cx = max(0, min(max(0, nw - tw), cx))
+@@ -135,7 +137,7 @@
+ 
+ def fit_contain(img: Image.Image, size: tuple[int, int]) -> Image.Image:
+     src = img.convert("RGBA")
+-    src.thumbnail(size, Image.Resampling.LANCZOS)
++    src.thumbnail(size, Image.Resampling.BICUBIC)
+     return src
+ 
+ 
+@@ -176,13 +178,11 @@
+     x = int(center[0] - layer.width / 2)
+     y = int(center[1] - layer.height / 2)
+     if shadow:
+-        sh = Image.new("RGBA", base.size, (0, 0, 0, 0))
+         sm = layer.getchannel("A")
+         sim = Image.new("RGBA", layer.size, (0, 0, 0, 110))
+-        sim.putalpha(sm.point(lambda p: int(p * 0.55)))
+-        sh.alpha_composite(sim, (x + 10, y + 14))
+-        sh = sh.filter(ImageFilter.GaussianBlur(max(5, int(min(w, h) * 0.035))))
+-        base.alpha_composite(sh)
++        sim.putalpha(sm.point(lambda p: int(p * 0.52)))
++        sim = sim.filter(ImageFilter.GaussianBlur(max(4, int(min(w, h) * 0.018))))
++        base.alpha_composite(sim, (x + 9, y + 12))
+     base.alpha_composite(layer, (x, y))
+ 
+ 
+@@ -239,11 +239,11 @@
+         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+     w, h = tw + 64, th + 34
+     x1, y1 = int(center[0] - w / 2), int(center[1] - h / 2)
+-    sh = Image.new("RGBA", base.size, (0, 0, 0, 0))
++    sh = Image.new("RGBA", (w + 24, h + 24), (0, 0, 0, 0))
+     sd = ImageDraw.Draw(sh)
+-    sd.rounded_rectangle((x1 + 8, y1 + 10, x1 + w + 8, y1 + h + 10), radius=h // 2, fill=(0, 0, 0, 80))
+-    sh = sh.filter(ImageFilter.GaussianBlur(8))
+-    base.alpha_composite(sh)
++    sd.rounded_rectangle((4, 4, w + 4, h + 4), radius=h // 2, fill=(0, 0, 0, 75))
++    sh = sh.filter(ImageFilter.GaussianBlur(6))
++    base.alpha_composite(sh, (x1 + 4, y1 + 6))
+     d.rounded_rectangle((x1, y1, x1 + w, y1 + h), radius=h // 2, fill=fill)
+     d.text((x1 + (w - tw) // 2, y1 + (h - th) // 2 - 3), text, font=f, fill=text_fill)
+ 
+@@ -274,15 +274,18 @@
+ 
+ def overlay_vignette(base: Image.Image, amount: float = 0.35) -> None:
+     w, h = base.size
+-    yy, xx = np.mgrid[0:h, 0:w]
+-    nx = (xx - w / 2) / (w / 2)
+-    ny = (yy - h / 2) / (h / 2)
+-    dist = np.sqrt(nx * nx + ny * ny)
+-    alpha = np.clip((dist - 0.35) / 0.65, 0, 1) * 255 * amount
+-    layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+-    layer.putalpha(Image.fromarray(alpha.astype(np.uint8), "L"))
++    key = (w, h, int(round(amount * 1000)))
++    alpha_img = VIGNETTE_CACHE.get(key)
++    if alpha_img is None:
++        yy, xx = np.mgrid[0:h, 0:w]
++        nx = (xx - w / 2) / (w / 2)
++        ny = (yy - h / 2) / (h / 2)
++        dist = np.sqrt(nx * nx + ny * ny)
++        alpha = np.clip((dist - 0.35) / 0.65, 0, 1) * 255 * amount
++        alpha_img = Image.fromarray(alpha.astype(np.uint8), "L")
++        VIGNETTE_CACHE[key] = alpha_img
+     black = Image.new("RGBA", (w, h), (0, 0, 0, 255))
+-    black.putalpha(layer.getchannel("A"))
++    black.putalpha(alpha_img)
+     base.alpha_composite(black)
+ 
+ 
+@@ -657,7 +660,13 @@
+     missing = [str(p) for p in [*required_images.values(), *required_videos.values()] if not p.exists() or p.stat().st_size < 1000]
+     if missing:
+         raise FileNotFoundError(f"Missing assets: {missing}")
+-    images = {key: Image.open(path).convert("RGB") for key, path in required_images.items()}
++    images: dict[str, Image.Image] = {}
++    for key, path in required_images.items():
++        with Image.open(path) as source:
++            image = source.convert("RGB")
++            max_side = 1900 if key in {"noko_tree", "noko_pair", "kokuwa", "ookuwa", "miyama_male", "hirata_dorsal"} else 1700
++            image.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
++            images[key] = image.copy()
+     return images, required_videos
+ 
+ 
+@@ -977,7 +986,7 @@
+ 
+ def write_credits(path: Path) -> None:
+     path.write_text(
+-        "クワガタたんけんたい 修正版パイロット v2（個人視聴用）\n"
++        "クワガタたんけんたい 修正版パイロット v2（高速レンダリング版・個人視聴用）\n"
+         "\n"
+         "【今回の主要修正】\n"
+         "・キノコ主体の背景を廃止し、実際の森林映像へ変更。\n"
