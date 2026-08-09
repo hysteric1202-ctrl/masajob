@@ -1,0 +1,36 @@
+name: Record Public YouTube Embed Sample
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/record_youtube_embed.py'
+      - '.github/workflows/record-youtube-embed.yml'
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+      - name: Record reference video through embedded player
+        run: python scripts/record_youtube_embed.py wWYOgTFZ-FY 0 35 youtube_browser_capture
+      - name: Inspect result
+        run: |
+          find youtube_browser_capture -maxdepth 1 -type f -printf '%f | %s bytes\n' | sort
+          cat youtube_browser_capture/diagnostics.json
+      - name: Upload capture
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-browser-capture
+          path: youtube_browser_capture/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
