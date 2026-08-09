@@ -1,0 +1,37 @@
+name: Download High-Quality Kuwagata Assets
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/download_kw_pro_assets.py'
+      - '.github/workflows/download-kw-pro-assets.yml'
+
+jobs:
+  assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install tools
+        run: |
+          pip install requests pillow
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-noto-cjk
+      - name: Download and validate assets
+        run: python scripts/download_kw_pro_assets.py
+      - name: List pack
+        run: |
+          find kw_pro_assets -maxdepth 1 -type f -printf '%f | %s bytes\n' | sort
+          cat kw_pro_assets/asset_manifest.json
+      - name: Upload asset pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: kw-pro-assets
+          path: kw_pro_assets/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
