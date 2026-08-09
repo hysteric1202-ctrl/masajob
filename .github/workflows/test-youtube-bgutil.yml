@@ -1,0 +1,56 @@
+name: Test YouTube Download with BgUtils POT
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/test-youtube-bgutil.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install yt-dlp and POT provider plugin
+        run: |
+          python -m pip install --upgrade pip
+          pip install -U yt-dlp bgutil-ytdlp-pot-provider
+
+      - name: Start BgUtils POT provider
+        run: |
+          docker run --name bgutil-provider -d --init -p 4416:4416 brainicism/bgutil-ytdlp-pot-provider:1.3.1
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4416/ping >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          docker logs bgutil-provider || true
+
+      - name: Download public reference sample
+        run: |
+          mkdir -p youtube_bgutil_test
+          yt-dlp -v \
+            --extractor-args 'youtube:player_client=mweb,web_safari,web_embedded' \
+            -f 'bv*[height<=480]+ba/b[height<=480]' \
+            --merge-output-format mp4 \
+            --download-sections '*00:00:00-00:01:00' \
+            --force-keyframes-at-cuts \
+            -o 'youtube_bgutil_test/reference.%(ext)s' \
+            'https://www.youtube.com/watch?v=wWYOgTFZ-FY'
+          ffprobe -v error -show_streams -show_format -of json youtube_bgutil_test/reference.mp4 > youtube_bgutil_test/ffprobe.json
+
+      - name: Upload sample
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-bgutil-test
+          path: youtube_bgutil_test/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
