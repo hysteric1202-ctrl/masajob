@@ -1,0 +1,36 @@
+name: Record YouTube Iframe with Referrer
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/record_youtube_iframe.py'
+      - '.github/workflows/record-youtube-iframe.yml'
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+      - name: Record public reference through local iframe wrapper
+        run: python scripts/record_youtube_iframe.py wWYOgTFZ-FY 0 35 youtube_iframe_capture
+      - name: Inspect capture
+        run: |
+          find youtube_iframe_capture -maxdepth 1 -type f -printf '%f | %s bytes\n' | sort
+          cat youtube_iframe_capture/diagnostics.json
+      - name: Upload capture
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-iframe-capture
+          path: youtube_iframe_capture/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
