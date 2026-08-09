@@ -1,0 +1,48 @@
+name: Export Corrected Kuwagata Revision Assets
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/export-kuwagata-revision-assets.yml'
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install tools
+        run: |
+          pip install pillow requests
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-noto-cjk librsvg2-bin
+      - name: Download validated source packs
+        run: |
+          mkdir -p incoming/pro incoming/images
+          gh run download 31288295927 --repo '${{ github.repository }}' --name kw-pro-assets --dir incoming/pro
+          gh run download 31288093670 --repo '${{ github.repository }}' --name kw-exact-images --dir incoming/images
+      - name: Build corrected visual asset pack
+        run: |
+          python scripts/fetch_kuwagata_revision_v3_assets.py \
+            --images-dir incoming/images \
+            --pro-dir incoming/pro \
+            --out corrected_revision_assets
+          find corrected_revision_assets -maxdepth 1 -type f -printf '%f | %s bytes\n' | sort
+      - uses: actions/upload-artifact@v4
+        with:
+          name: corrected-kuwagata-revision-assets
+          path: corrected_revision_assets/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
