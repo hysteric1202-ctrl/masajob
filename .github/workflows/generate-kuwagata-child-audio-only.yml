@@ -1,0 +1,93 @@
+name: Generate Kuwagata Child Audio Only
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/generate-kuwagata-child-audio-only.yml'
+      - 'scripts/build_kuwagata_revision_v2.py'
+
+concurrency:
+  group: kuwagata-child-audio-only
+  cancel-in-progress: true
+
+jobs:
+  audio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install audio dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pillow numpy requests opencv-python-headless
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          docker --version
+
+      - name: Start VOICEVOX
+        run: |
+          docker pull voicevox/voicevox_engine:cpu-latest
+          docker run --rm -d --name voicevox -p 127.0.0.1:50021:50021 voicevox/voicevox_engine:cpu-latest
+          for i in $(seq 1 100); do
+            if curl -fsS http://127.0.0.1:50021/version; then
+              echo
+              echo 'VOICEVOX ready.'
+              exit 0
+            fi
+            sleep 3
+          done
+          docker logs voicevox || true
+          exit 1
+
+      - name: Generate 60-second narration and music mix
+        run: |
+          mkdir -p child_audio_output child_audio_work
+          python - <<'PY'
+          from pathlib import Path
+          import importlib.util
+
+          script = Path('scripts/build_kuwagata_revision_v2.py')
+          spec = importlib.util.spec_from_file_location('kw', script)
+          kw = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(kw)
+
+          work = Path('child_audio_work')
+          out = Path('child_audio_output')
+          music = work / 'music_sfx.wav'
+          kw.make_music(music)
+          clips = kw.synthesize_voice(work / 'voice', 'http://127.0.0.1:50021')
+          mixed = out / 'Kuwagata_Expedition_ChildVoice_60s.m4a'
+          kw.mix_audio(music, clips, mixed)
+          kw.make_srt(out / 'Kuwagata_Expedition_ChildVoice_60s.srt')
+          for _, _, clip, _ in clips:
+              target = out / clip.name
+              target.write_bytes(clip.read_bytes())
+          print('Generated:', mixed, mixed.stat().st_size)
+          PY
+          ffprobe -v error -show_entries format=duration,size -of default=nw=1 child_audio_output/Kuwagata_Expedition_ChildVoice_60s.m4a
+
+      - name: Stop VOICEVOX
+        if: always()
+        run: docker rm -f voicevox >/dev/null 2>&1 || true
+
+      - name: Upload child audio
+        uses: actions/upload-artifact@v4
+        with:
+          name: kuwagata-child-audio-60s
+          path: child_audio_output/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
