@@ -1,0 +1,29 @@
+name: Fetch YouTube Reference through Piped
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/fetch_piped_video.py'
+      - '.github/workflows/fetch-piped-reference.yml'
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests
+      - name: Fetch reference metadata and stream
+        run: python scripts/fetch_piped_video.py wWYOgTFZ-FY piped_reference
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        with:
+          name: piped-reference
+          path: piped_reference/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
