@@ -1,0 +1,22 @@
+name: Cancel Superseded Kuwagata Renders
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/cancel-superseded-kuwagata-renders.yml'
+
+jobs:
+  cancel:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Cancel superseded v3 and v4 runs
+        run: |
+          gh api -X POST 'repos/${{ github.repository }}/actions/runs/31292413716/cancel' || true
+          gh api -X POST 'repos/${{ github.repository }}/actions/runs/31293401180/cancel' || true
+          echo 'Superseded runs cancellation requested.'
